@@ -39,13 +39,43 @@ https://blog.csdn.net/m0_46850835/article/details/136377919
 =>生成正文（100train，8k->1k）
 **RAG优点**:动态知识更新、领域知识库、可解释性、可溯源、减少模型幻觉
 
-
-对于行业相关内容，从招股说明书和评级报告提取，包括行业简介、行业竞争趋势、行业壁垒、行业技术水平、行业周期性、季节性、区域性这几个小章节。每家机构的格式都不一样，构建了文档RAG方案，简单说先根据各级标题构建树形索引，召回相关内容，利用chatglm3做内容总结
+**延伸**：对于行业相关内容，从招股说明书和评级报告提取，包括行业简介、行业竞争趋势、行业壁垒、行业技术水平、行业周期性、季节性、区域性这几个小章节。每家机构的格式都不一样，构建了文档RAG方案，简单说先根据各级标题构建树形索引，召回相关内容，利用chatglm3做内容总结
 用树型索引的原因在于：
 - 报告本身就是一种树型结构
 - 便于操作，比如一个节点匹配中了，可以直接根据禁用词裁剪不需要的叶子节点
 - 便于重建文本
 
+### Visualized BGE
+- 文本检索多模态（query：text;  candidate: image-text text image）e.g. [WebQA](https://github.com/WebQnA/WebQA)
+- 多模态检索图像（query：image-text;  candidate: image）e.g. [CIRR](https://github.com/FlagOpen/FlagEmbedding/blob/master/FlagEmbedding/visual), [FashionIQ](https://github.com/FlagOpen/FlagEmbedding/blob/master/FlagEmbedding/visual)
+- 多模态检索文本（query：image-text;  candidate: text）e.g. [ReMuQ](https://github.com/FlagOpen/FlagEmbedding/blob/master/FlagEmbedding/visual)
+
+##### EVA-CLIP架构：
+image-encoder编码图像a
+text-encoder编码文本b
+同一个（图像-文本）pair的a和b更近
+eva-clip与clip的差别：训练层面的优化（eva模型初始化、优化器）
+
+reranker-v2: 0.5B，交叉熵损失∑ylog(y`)
+### BGE-M3
+多语言、多粒度（输入长度达8192tokens）、多功能（dense、sparse、multi）
+数据：1.2亿多语言的文本对，包含有无标签和生成数据（根据文档生成可能的问句）。
+	1.没有标注信息的弱监督数据：来自于从网上挖掘得到的各种有语义关联的数据，并过滤掉其中低质量的内容。
+	2.来自有标注信息的监督数据：包括若干个中文跟英文的开源数据集，例如MS MARCO，NLI，DuReader等。
+	3.合成得到的监督数据：利用GPT3.5为来自Wiki跟MC4的长文本生成对应的问题，用于缓解模型在长文档检索任务的不足，同时引入额外的多语言数据
+
+检索方式：dense计算内积、
+                  sparse计算重复token加权得分，权重由token的last-hidden-states经过Relu激活得到、
+                  multi-vec计算query每个token和文档每个token的向量相似度，取最大值为得分，所有位置得分求平均，就得到相似度得分了。其中每个token的向量通过对last-hidden-states做全链接和norm
+训练方式：
+	loss由两部分组成：infoNCE
+		自知识蒸馏：三种方式的相似度加权和作为teacher得分，让三种方式去学习，再对三个交叉熵loss求和平均
+	多阶段训练：
+		RetroMAE做预训练，获得一个底座
+		二阶段训练只考虑dense检索的infoNCE
+		三阶段在有监督数据2.3上训练
+	hard负样本：
+		ANCE：语料库的最邻近(ANN)索引构造负样本，表示向量的encoder每步都会更新。
 
 ##### 3.客服
 有非常多的功能页6w，用户主要会问功能页的路径或者当前功能页的操作说明。知识库最初只有路径类文本，语义太少了，只能用于字符匹配召回；于是我们通过数据增强构造QA对，从而构建了与用户问句对齐的文本向量库用于向量匹配。
@@ -71,6 +101,15 @@ DPO通过公式转化，将policy的参数由奖励r来表示，于是就考虑�
 GlobalPoint：传统是两个模块识别实体首尾，gp视为整体（上三角，n(n+1)/2个片段选k个实体）
 ![image-20240527195210810](file://C:/Users/viruser.v-desktop/AppData/Roaming/Typora/typora-user-images/image-20240527195210810.png?lastModify=1717642824)
 RoPE相对位置、多标签分类交叉熵（softmax推广至多标签）、efficientGP（抽取共享、分类）
+## GPLinker
+**GlobalPointer**：通常pointer network使用两个模块分别识别实体的首和尾，GP将首尾视为一个整体。
+构造一个上三角矩阵，每个点都是一个序列片段，一共有n(n+1)/2个，其中可能有k个实体（假设只有一类实体），此时就转换为n(n+1)/2选k，m类实体就是m个n(n+1)/2选k
+![image-20240527195210810](C:\Users\viruser.v-desktop\AppData\Roaming\Typora\typora-user-images\image-20240527195210810.png)
+q和k表示第α类实体的向量序列，内积作为片段是否是实体的打分函数，简化版的MHA，有多少类实体就有多少个head，只是少了V的运算。
+**相对位置信息**：RoPE
+**多标签分类交叉熵**：多标签分类传统做法是拆成单标签sigmoid激活的二分类，存在类别不均衡（大多数都是负样本），而单标签分类可以用softmax，不存在类别不均衡。于是将softmax推广到多标签分类。目标类别得分与非目标类别得分之间两两比较，logsumexp平衡了每一项的权重。
+**Efficient GlobalPointer**：参数太多，有α个Wq和Wk，可以分解为抽取和分类两部，抽取共享q、k参数，分类采用特征拼接+Dense层来完成。
+![image-20240527204051959](C:\Users\viruser.v-desktop\AppData\Roaming\Typora\typora-user-images\image-20240527204051959.png)
 
 ##### 6.热点新闻
 主要思想是利用不同的数据增强方法生成正对，以两个独立的样本作为负对，然后采用InfoNCE损失拉进正对的嵌入，疏远负对的嵌入
