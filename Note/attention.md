@@ -122,3 +122,6 @@ https://mp.weixin.qq.com/s/gX0sQCOClIsBsT_Z_0GhRg
 避免将全部参数在HBM和SRAM中交换
 tiling（分块）：根据SRAM的大小和矩阵维度，将输入分块，计算score和prob（快）
 recomputation：类似gradient checkpointing，只保存部分梯度，有些梯度只在用的时候存（省）
+
+#### PageAttention
+kv cache动态变化，显存碎片化存储的预留机制会造成较大的浪费，参照内存分页的思想，在不连续的空间存储kv

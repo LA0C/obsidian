@@ -1,6 +1,7 @@
 ## 大模型用于数据工程
-
 ### 1.用于数据标注
+Self-Instruct: Aligning Language Models with Self-Generated Instructions（[paper](https://link.zhihu.com/?target=https%3A//arxiv.org/abs/2212.10560)、[github](https://link.zhihu.com/?target=https%3A//github.com/yizhongw/self-instruct)）
+准备任务指令库，每个任务有一个示例指令，生成新指令，识别是否是分类任务，分类采用输出优先prompt，非分类采用输入优先prompt。最后过滤掉低质量、重复的指令。
 
 《Large Language Models for Data Annotation: A Survey》(https://arxiv.org/pdf/2402.13446)
 
